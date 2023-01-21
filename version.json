@@ -1,11 +1,11 @@
 {
     "main": {
-        "protoc_version": "31-dev",
+        "protoc_version": "31-q-pac",
         "lts": false,
-        "date": "2025-02-04",
+        "date": "2025-04-23",
         "languages": {
             "cpp": "6.31-dev",
-            "csharp": "3.31-dev",
+            "csharp": "3.31-q-pac",
             "java": "4.31-dev",
             "javascript": "3.31-dev",
             "objectivec": "4.31-dev",
