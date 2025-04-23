@@ -53,8 +53,10 @@ void RepeatedMessageFieldGenerator::GenerateMembers(io::Printer* printer) {
   printer->Print(";\n");
   printer->Print(
     variables_,
+
     "private readonly pbc::RepeatedField<$type_name$> $name$_ = new pbc::RepeatedField<$type_name$>();\n");
   WritePropertyDocComment(printer, options(), descriptor_);
+
   AddPublicMemberAttributes(printer);
   printer->Print(
     variables_,
