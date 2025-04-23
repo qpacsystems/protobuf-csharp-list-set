@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // Author: kenton@google.com (Kenton Varda)
 //  Based on original Protocol Buffers design by
@@ -107,9 +84,9 @@
 #ifndef GOOGLE_PROTOBUF_IO_ZERO_COPY_STREAM_H__
 #define GOOGLE_PROTOBUF_IO_ZERO_COPY_STREAM_H__
 
-#include "google/protobuf/stubs/common.h"
+#include <cstdint>
+
 #include "absl/strings/cord.h"
-#include "google/protobuf/port.h"
 
 
 // Must be included last.
@@ -119,18 +96,17 @@ namespace google {
 namespace protobuf {
 namespace io {
 
-// Defined in this file.
-class ZeroCopyInputStream;
-class ZeroCopyOutputStream;
-
 // Abstract interface similar to an input stream but designed to minimize
 // copying.
 class PROTOBUF_EXPORT ZeroCopyInputStream {
  public:
-  ZeroCopyInputStream() {}
+  ZeroCopyInputStream() = default;
+  virtual ~ZeroCopyInputStream() = default;
+
   ZeroCopyInputStream(const ZeroCopyInputStream&) = delete;
   ZeroCopyInputStream& operator=(const ZeroCopyInputStream&) = delete;
-  virtual ~ZeroCopyInputStream() {}
+  ZeroCopyInputStream(ZeroCopyInputStream&&) = delete;
+  ZeroCopyInputStream& operator=(ZeroCopyInputStream&&) = delete;
 
   // Obtains a chunk of data from the stream.
   //
@@ -199,10 +175,10 @@ class PROTOBUF_EXPORT ZeroCopyInputStream {
 // copying.
 class PROTOBUF_EXPORT ZeroCopyOutputStream {
  public:
-  ZeroCopyOutputStream() {}
+  ZeroCopyOutputStream() = default;
   ZeroCopyOutputStream(const ZeroCopyOutputStream&) = delete;
   ZeroCopyOutputStream& operator=(const ZeroCopyOutputStream&) = delete;
-  virtual ~ZeroCopyOutputStream() {}
+  virtual ~ZeroCopyOutputStream() = default;
 
   // Obtains a buffer into which data can be written.  Any data written
   // into this buffer will eventually (maybe instantly, maybe later on)
@@ -256,7 +232,7 @@ class PROTOBUF_EXPORT ZeroCopyOutputStream {
 
   // Write a given chunk of data to the output.  Some output streams may
   // implement this in a way that avoids copying. Check AllowsAliasing() before
-  // calling WriteAliasedRaw(). It will GOOGLE_ABSL_CHECK fail if WriteAliasedRaw() is
+  // calling WriteAliasedRaw(). It will ABSL_CHECK fail if WriteAliasedRaw() is
   // called on a stream that does not allow aliasing.
   //
   // NOTE: It is caller's responsibility to ensure that the chunk of memory

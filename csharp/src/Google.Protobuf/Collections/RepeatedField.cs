@@ -1,40 +1,24 @@
 #region Copyright notice and license
 // Protocol Buffers - Google's data interchange format
 // Copyright 2015 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 #endregion
 
 using System;
+using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security;
+#if NET5_0_OR_GREATER
+using System.Runtime.CompilerServices;
+#endif
 
 namespace Google.Protobuf.Collections
 {
@@ -47,6 +31,8 @@ namespace Google.Protobuf.Collections
     /// supported by Protocol Buffers but nor does it guarantee that all operations will work in such cases.
     /// </remarks>
     /// <typeparam name="T">The element type of the repeated field.</typeparam>
+    [DebuggerDisplay("Count = {Count}")]
+    [DebuggerTypeProxy(typeof(RepeatedField<>.RepeatedFieldDebugView))]
     public sealed class RepeatedField<T> : IList<T>, IList, IDeepCloneable<RepeatedField<T>>, IEquatable<RepeatedField<T>>, IReadOnlyList<T>
     {
         private static readonly EqualityComparer<T> EqualityComparer = ProtobufEqualityComparers.GetEqualityComparer<T>();
@@ -132,12 +118,24 @@ namespace Google.Protobuf.Collections
                     {
                         EnsureSize(count + (length / codec.FixedSize));
 
-                        while (!SegmentedBufferHelper.IsReachedLimit(ref ctx.state))
+                        // if littleEndian treat array as bytes and directly copy from buffer for improved performance
+                        if(TryGetArrayAsSpanPinnedUnsafe(codec, out Span<byte> span, out GCHandle handle))
                         {
-                            // Only FieldCodecs with a fixed size can reach here, and they are all known
-                            // types that don't allow the user to specify a custom reader action.
-                            // reader action will never return null.
-                            array[count++] = reader(ref ctx);
+                            span = span.Slice(count * codec.FixedSize);
+                            Debug.Assert(span.Length >= length);
+                            ParsingPrimitives.ReadPackedFieldLittleEndian(ref ctx.buffer, ref ctx.state, length, span);
+                            count += length / codec.FixedSize;
+                            handle.Free();
+                        }
+                        else
+                        {
+                            while (!SegmentedBufferHelper.IsReachedLimit(ref ctx.state))
+                            {
+                                // Only FieldCodecs with a fixed size can reach here, and they are all known
+                                // types that don't allow the user to specify a custom reader action.
+                                // reader action will never return null.
+                                array[count++] = reader(ref ctx);
+                            }
                         }
                     }
                     else
@@ -257,9 +255,21 @@ namespace Google.Protobuf.Collections
                 int size = CalculatePackedDataSize(codec);
                 ctx.WriteTag(tag);
                 ctx.WriteLength(size);
-                for (int i = 0; i < count; i++)
+
+                // if littleEndian and elements has fixed size, treat array as bytes (and write it as bytes to buffer) for improved performance
+                if(TryGetArrayAsSpanPinnedUnsafe(codec, out Span<byte> span, out GCHandle handle))
                 {
-                    writer(ref ctx, array[i]);
+                    span = span.Slice(0, Count * codec.FixedSize);
+
+                    WritingPrimitives.WriteRawBytes(ref ctx.buffer, ref ctx.state, span);
+                    handle.Free();
+                }
+                else
+                {
+                    for (int i = 0; i < count; i++)
+                    {
+                        writer(ref ctx, array[i]);
+                    }
                 }
             }
             else
@@ -374,7 +384,7 @@ namespace Google.Protobuf.Collections
             if (index == -1)
             {
                 return false;
-            }            
+            }
             Array.Copy(array, index + 1, array, index, count - index - 1);
             count--;
             array[count] = default;
@@ -449,6 +459,38 @@ namespace Google.Protobuf.Collections
         }
 
         /// <summary>
+        /// Adds the elements of the specified span to the end of the collection.
+        /// </summary>
+        /// <param name="source">The span whose elements should be added to the end of the collection.</param>
+        [SecuritySafeCritical]
+        internal void AddRangeSpan(ReadOnlySpan<T> source)
+        {
+            if (source.IsEmpty)
+            {
+                return;
+            }
+
+            // For reference types and nullable value types, we need to check that there are no nulls
+            // present. (This isn't a thread-safe approach, but we don't advertise this is thread-safe.)
+            // We expect the JITter to optimize this test to true/false, so it's effectively conditional
+            // specialization.
+            if (default(T) == null)
+            {
+                for (int i = 0; i < source.Length; i++)
+                {
+                    if (source[i] == null)
+                    {
+                        throw new ArgumentException("ReadOnlySpan contained null element", nameof(source));
+                    }
+                }
+            }
+
+            EnsureSize(count + source.Length);
+            source.CopyTo(array.AsSpan(count));
+            count += source.Length;
+        }
+
+        /// <summary>
         /// Adds all of the specified values into this collection. This method is present to
         /// allow repeated fields to be constructed from queries within collection initializers.
         /// Within non-collection-initializer code, consider using the equivalent <see cref="AddRange"/>
@@ -482,7 +524,7 @@ namespace Google.Protobuf.Collections
         ///   <c>true</c> if the specified <see cref="System.Object" /> is equal to this instance; otherwise, <c>false</c>.
         /// </returns>
         public override bool Equals(object obj) => Equals(obj as RepeatedField<T>);
-        
+
         /// <summary>
         /// Returns an enumerator that iterates through a collection.
         /// </summary>
@@ -495,7 +537,7 @@ namespace Google.Protobuf.Collections
         /// Returns a hash code for this instance.
         /// </summary>
         /// <returns>
-        /// A hash code for this instance, suitable for use in hashing algorithms and data structures like a hash table. 
+        /// A hash code for this instance, suitable for use in hashing algorithms and data structures like a hash table.
         /// </returns>
         public override int GetHashCode()
         {
@@ -630,6 +672,57 @@ namespace Google.Protobuf.Collections
             }
         }
 
+        [SecuritySafeCritical]
+        internal Span<T> AsSpan() => array.AsSpan(0, count);
+
+        internal void SetCount(int targetCount)
+        {
+            if (targetCount < 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(targetCount),
+                    targetCount,
+                    "Non-negative number required.");
+            }
+
+            if (targetCount > Capacity)
+            {
+                EnsureSize(targetCount);
+            }
+#if NET5_0_OR_GREATER
+            else if (targetCount < count && RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+            {
+                // Only reference types need to be cleared to allow GC to collect them.
+                Array.Clear(array, targetCount, count - targetCount);
+            }
+#else
+            else if (targetCount < count)
+            {
+                Array.Clear(array, targetCount, count - targetCount);
+            }
+#endif
+
+            count = targetCount;
+        }
+
+        [SecuritySafeCritical]
+        private unsafe bool TryGetArrayAsSpanPinnedUnsafe(FieldCodec<T> codec, out Span<byte> span, out GCHandle handle)
+        {
+            // 1. protobuf wire bytes is LittleEndian only
+            // 2. validate that size of csharp element T is matching the size of protobuf wire size
+            //    NOTE: cannot use bool with this span because csharp marshal it as 4 bytes
+            if (BitConverter.IsLittleEndian && (codec.FixedSize > 0 && Marshal.SizeOf(typeof(T)) == codec.FixedSize))
+            {
+                handle = GCHandle.Alloc(array, GCHandleType.Pinned);
+                span = new Span<byte>(handle.AddrOfPinnedObject().ToPointer(), array.Length * codec.FixedSize);
+                return true;
+            }
+
+            span = default;
+            handle = default;
+            return false;
+        }
+
         #region Explicit interface implementation for IList and ICollection.
         bool IList.IsFixedSize => false;
 
@@ -664,6 +757,19 @@ namespace Google.Protobuf.Collections
                 Remove(t);
             }
         }
-        #endregion        
+        #endregion
+
+        private sealed class RepeatedFieldDebugView
+        {
+            private readonly RepeatedField<T> list;
+
+            public RepeatedFieldDebugView(RepeatedField<T> list)
+            {
+                this.list = list;
+            }
+
+            [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
+            public T[] Items => list.ToArray();
+        }
     }
 }

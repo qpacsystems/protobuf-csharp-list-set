@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // Defines utilities for the Timestamp and Duration well known types.
 
@@ -37,18 +14,6 @@
 #include <ctime>
 #include <ostream>
 #include <string>
-#ifdef _MSC_VER
-#ifdef _XBOX_ONE
-struct timeval {
-  int64_t tv_sec;  /* seconds */
-  int64_t tv_usec; /* and microseconds */
-};
-#else
-#include <winsock2.h>
-#endif  // _XBOX_ONE
-#else
-#include <sys/time.h>
-#endif
 
 #include "google/protobuf/duration.pb.h"
 #include "google/protobuf/timestamp.pb.h"
@@ -176,10 +141,10 @@ class PROTOBUF_EXPORT TimeUtil {
   static time_t TimestampToTimeT(const Timestamp& value);
 
   // Conversion to/from timeval
-  static Timestamp TimevalToTimestamp(const timeval& value);
-  static timeval TimestampToTimeval(const Timestamp& value);
-  static Duration TimevalToDuration(const timeval& value);
-  static timeval DurationToTimeval(const Duration& value);
+  static Timestamp TimevalToTimestamp(const struct timeval& value);
+  static struct timeval TimestampToTimeval(const Timestamp& value);
+  static Duration TimevalToDuration(const struct timeval& value);
+  static struct timeval DurationToTimeval(const Duration& value);
 };
 
 }  // namespace util
@@ -270,7 +235,7 @@ inline Duration operator%(const Duration& d1, const Duration& d2) {
 }
 
 inline std::ostream& operator<<(std::ostream& out, const Duration& d) {
-  out << ::PROTOBUF_NAMESPACE_ID::util::TimeUtil::ToString(d);
+  out << google::protobuf::util::TimeUtil::ToString(d);
   return out;
 }
 
@@ -319,7 +284,7 @@ inline Timestamp operator-(const Timestamp& t, const Duration& d) {
 PROTOBUF_EXPORT Duration operator-(const Timestamp& t1, const Timestamp& t2);
 
 inline std::ostream& operator<<(std::ostream& out, const Timestamp& t) {
-  out << ::PROTOBUF_NAMESPACE_ID::util::TimeUtil::ToString(t);
+  out << google::protobuf::util::TimeUtil::ToString(t);
   return out;
 }
 

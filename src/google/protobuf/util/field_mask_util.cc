@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 #include "google/protobuf/util/field_mask_util.h"
 
@@ -36,8 +13,9 @@
 #include <vector>
 
 #include "absl/container/btree_map.h"
-#include "google/protobuf/stubs/logging.h"
-#include "google/protobuf/stubs/logging.h"
+#include "absl/log/absl_check.h"
+#include "absl/log/absl_log.h"
+#include "absl/log/die_if_null.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
@@ -449,7 +427,7 @@ void FieldMaskTree::MergeLeafNodesToTree(absl::string_view prefix,
 void FieldMaskTree::MergeMessage(const Node* node, const Message& source,
                                  const FieldMaskUtil::MergeOptions& options,
                                  Message* destination) {
-  GOOGLE_ABSL_DCHECK(!node->children.empty());
+  ABSL_DCHECK(!node->children.empty());
   const Reflection* source_reflection = source.GetReflection();
   const Reflection* destination_reflection = destination->GetReflection();
   const Descriptor* descriptor = source.GetDescriptor();
@@ -458,7 +436,7 @@ void FieldMaskTree::MergeMessage(const Node* node, const Message& source,
     const Node* child = kv.second.get();
     const FieldDescriptor* field = descriptor->FindFieldByName(field_name);
     if (field == nullptr) {
-      GOOGLE_ABSL_LOG(ERROR) << "Cannot find field \"" << field_name
+      ABSL_LOG(ERROR) << "Cannot find field \"" << field_name
                       << "\" in message " << descriptor->full_name();
       continue;
     }
@@ -466,7 +444,7 @@ void FieldMaskTree::MergeMessage(const Node* node, const Message& source,
       // Sub-paths are only allowed for singular message fields.
       if (field->is_repeated() ||
           field->cpp_type() != FieldDescriptor::CPPTYPE_MESSAGE) {
-        GOOGLE_ABSL_LOG(ERROR) << "Field \"" << field_name << "\" in message "
+        ABSL_LOG(ERROR) << "Field \"" << field_name << "\" in message "
                         << descriptor->full_name()
                         << " is not a singular message field and cannot "
                         << "have sub-fields.";
@@ -583,7 +561,7 @@ void FieldMaskTree::AddRequiredFieldPath(Node* node,
 }
 
 bool FieldMaskTree::TrimMessage(const Node* node, Message* message) {
-  GOOGLE_ABSL_DCHECK(!node->children.empty());
+  ABSL_DCHECK(!node->children.empty());
   const Reflection* reflection = message->GetReflection();
   const Descriptor* descriptor = message->GetDescriptor();
   const int32_t field_count = descriptor->field_count();
@@ -682,7 +660,7 @@ bool FieldMaskUtil::IsPathInFieldMask(absl::string_view path,
 void FieldMaskUtil::MergeMessageTo(const Message& source, const FieldMask& mask,
                                    const MergeOptions& options,
                                    Message* destination) {
-  GOOGLE_ABSL_CHECK(source.GetDescriptor() == destination->GetDescriptor());
+  ABSL_CHECK(source.GetDescriptor() == destination->GetDescriptor());
   // Build a FieldMaskTree and walk through the tree to merge all specified
   // fields.
   FieldMaskTree tree;
@@ -695,7 +673,7 @@ bool FieldMaskUtil::TrimMessage(const FieldMask& mask, Message* message) {
   // fields.
   FieldMaskTree tree;
   tree.MergeFromFieldMask(mask);
-  return tree.TrimMessage(GOOGLE_CHECK_NOTNULL(message));
+  return tree.TrimMessage(ABSL_DIE_IF_NULL(message));
 }
 
 bool FieldMaskUtil::TrimMessage(const FieldMask& mask, Message* message,
@@ -707,11 +685,13 @@ bool FieldMaskUtil::TrimMessage(const FieldMask& mask, Message* message,
   // If keep_required_fields is true, implicitly add required fields of
   // a message present in the tree to prevent from trimming.
   if (options.keep_required_fields()) {
-    tree.AddRequiredFieldPath(GOOGLE_CHECK_NOTNULL(message->GetDescriptor()));
+    tree.AddRequiredFieldPath(ABSL_DIE_IF_NULL(message->GetDescriptor()));
   }
-  return tree.TrimMessage(GOOGLE_CHECK_NOTNULL(message));
+  return tree.TrimMessage(ABSL_DIE_IF_NULL(message));
 }
 
 }  // namespace util
 }  // namespace protobuf
 }  // namespace google
+
+#include "google/protobuf/port_undef.inc"

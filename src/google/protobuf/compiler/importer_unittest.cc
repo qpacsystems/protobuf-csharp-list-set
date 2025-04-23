@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // Author: kenton@google.com (Kenton Varda)
 //  Based on original Protocol Buffers design by
@@ -39,14 +16,14 @@
 #include "google/protobuf/testing/file.h"
 #include "google/protobuf/testing/file.h"
 #include "google/protobuf/testing/file.h"
-#include "google/protobuf/descriptor.h"
 #include "google/protobuf/testing/googletest.h"
 #include <gtest/gtest.h>
 #include "absl/container/flat_hash_map.h"
-#include "google/protobuf/stubs/logging.h"
+#include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/substitute.h"
+#include "google/protobuf/descriptor.h"
 #include "google/protobuf/io/zero_copy_stream_impl.h"
 
 namespace google {
@@ -71,14 +48,14 @@ class MockErrorCollector : public MultiFileErrorCollector {
   std::string warning_text_;
 
   // implements ErrorCollector ---------------------------------------
-  void AddError(const std::string& filename, int line, int column,
-                const std::string& message) override {
+  void RecordError(absl::string_view filename, int line, int column,
+                   absl::string_view message) override {
     absl::SubstituteAndAppend(&text_, "$0:$1:$2: $3\n", filename, line, column,
                               message);
   }
 
-  void AddWarning(const std::string& filename, int line, int column,
-                  const std::string& message) override {
+  void RecordWarning(absl::string_view filename, int line, int column,
+                     absl::string_view message) override {
     absl::SubstituteAndAppend(&warning_text_, "$0:$1:$2: $3\n", filename, line,
                               column, message);
   }
@@ -269,7 +246,7 @@ class DiskSourceTreeTest : public testing::Test {
       if (FileExists(dirnames_[i])) {
         File::DeleteRecursively(dirnames_[i], NULL, NULL);
       }
-      GOOGLE_ABSL_CHECK_OK(File::CreateDir(dirnames_[i], 0777));
+      ABSL_CHECK_OK(File::CreateDir(dirnames_[i], 0777));
     }
   }
 
@@ -282,11 +259,11 @@ class DiskSourceTreeTest : public testing::Test {
   }
 
   void AddFile(const std::string& filename, const char* contents) {
-    GOOGLE_ABSL_CHECK_OK(File::SetContents(filename, contents, true));
+    ABSL_CHECK_OK(File::SetContents(filename, contents, true));
   }
 
   void AddSubdir(const std::string& dirname) {
-    GOOGLE_ABSL_CHECK_OK(File::CreateDir(dirname, 0777));
+    ABSL_CHECK_OK(File::CreateDir(dirname, 0777));
   }
 
   void ExpectFileContents(const std::string& filename,
@@ -400,7 +377,7 @@ TEST_F(DiskSourceTreeTest, OrderingTrumpsSpecificity) {
   // directory is more-specific than a former one.
 
   // Create the "bar" directory so we can put a file in it.
-  GOOGLE_ABSL_CHECK_OK(File::CreateDir(absl::StrCat(dirnames_[0], "/bar"),
+  ABSL_CHECK_OK(File::CreateDir(absl::StrCat(dirnames_[0], "/bar"),
                                 0777));
 
   // Add files and map paths.

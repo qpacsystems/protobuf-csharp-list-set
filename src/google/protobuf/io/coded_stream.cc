@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // Author: kenton@google.com (Kenton Varda)
 //  Based on original Protocol Buffers design by
@@ -43,20 +20,24 @@
 #include <limits.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
+#include <memory>
+#include <string>
 #include <utility>
 
-#include "google/protobuf/stubs/logging.h"
-#include "google/protobuf/stubs/logging.h"
+#include "absl/base/optimization.h"
+#include "absl/log/absl_check.h"
+#include "absl/log/absl_log.h"
 #include "absl/strings/cord.h"
 #include "absl/strings/internal/resize_uninitialized.h"
 #include "absl/strings/string_view.h"
 #include "google/protobuf/arena.h"
 #include "google/protobuf/io/zero_copy_stream.h"
 #include "google/protobuf/io/zero_copy_stream_impl_lite.h"
-#include "google/protobuf/port.h"
 
 
 // Must be included last.
@@ -97,7 +78,7 @@ inline uint8_t* CopyCordToArray(const absl::Cord& cord, uint8_t* target) {
 // CodedInputStream ==================================================
 
 CodedInputStream::~CodedInputStream() {
-  if (input_ != NULL) {
+  if (input_ != nullptr) {
     BackUpInputToCurrentPosition();
   }
 }
@@ -141,9 +122,9 @@ CodedInputStream::Limit CodedInputStream::PushLimit(int byte_limit) {
   // security: byte_limit is possibly evil, so check for negative values
   // and overflow. Also check that the new requested limit is before the
   // previous limit; otherwise we continue to enforce the previous limit.
-  if (PROTOBUF_PREDICT_TRUE(byte_limit >= 0 &&
-                            byte_limit <= INT_MAX - current_position &&
-                            byte_limit < current_limit_ - current_position)) {
+  if (ABSL_PREDICT_TRUE(byte_limit >= 0 &&
+                        byte_limit <= INT_MAX - current_position &&
+                        byte_limit < current_limit_ - current_position)) {
     current_limit_ = current_position + byte_limit;
     RecomputeBufferLimits();
   }
@@ -175,7 +156,7 @@ CodedInputStream::Limit CodedInputStream::ReadLengthAndPushLimit() {
 bool CodedInputStream::DecrementRecursionDepthAndPopLimit(Limit limit) {
   bool result = ConsumedEntireMessage();
   PopLimit(limit);
-  GOOGLE_ABSL_DCHECK_LT(recursion_budget_, recursion_limit_);
+  ABSL_DCHECK_LT(recursion_budget_, recursion_limit_);
   ++recursion_budget_;
   return result;
 }
@@ -207,7 +188,7 @@ int CodedInputStream::BytesUntilTotalBytesLimit() const {
 }
 
 void CodedInputStream::PrintTotalBytesLimitError() {
-  GOOGLE_ABSL_LOG(ERROR) << "A protocol message was rejected because it was too "
+  ABSL_LOG(ERROR) << "A protocol message was rejected because it was too "
                      "big (more than "
                   << total_bytes_limit_
                   << " bytes).  To increase the limit (or to disable these "
@@ -223,7 +204,7 @@ bool CodedInputStream::SkipFallback(int count, int original_buffer_size) {
   }
 
   count -= original_buffer_size;
-  buffer_ = NULL;
+  buffer_ = nullptr;
   buffer_end_ = buffer_;
 
   // Make sure this skip doesn't try to skip past the current limit.
@@ -280,7 +261,7 @@ bool CodedInputStream::ReadString(std::string* buffer, int size) {
     if (z.second) {
       // Oddly enough, memcpy() requires its first two args to be non-NULL even
       // if we copy 0 bytes.  So, we have ensured that z.first is non-NULL here.
-      GOOGLE_ABSL_DCHECK(z.first != NULL);
+      ABSL_DCHECK(z.first != nullptr);
       memcpy(z.first, buffer_, size);
       Advance(size);
     }
@@ -324,7 +305,7 @@ bool CodedInputStream::ReadStringFallback(std::string* buffer, int size) {
 }
 
 bool CodedInputStream::ReadCord(absl::Cord* output, int size) {
-  GOOGLE_ABSL_DCHECK_NE(output, nullptr);
+  ABSL_DCHECK_NE(output, nullptr);
 
   // security: size is often user-supplied
   if (size < 0) {
@@ -354,7 +335,7 @@ bool CodedInputStream::ReadCord(absl::Cord* output, int size) {
   // Make sure to not cross a limit set by PushLimit() or SetTotalBytesLimit().
   const int closest_limit = std::min(current_limit_, total_bytes_limit_);
   const int available = closest_limit - total_bytes_read_;
-  if (PROTOBUF_PREDICT_FALSE(size > available)) {
+  if (ABSL_PREDICT_FALSE(size > available)) {
     total_bytes_read_ = closest_limit;
     input_->ReadCord(output, available);
     return false;
@@ -364,17 +345,36 @@ bool CodedInputStream::ReadCord(absl::Cord* output, int size) {
 }
 
 
-bool CodedInputStream::ReadLittleEndian32Fallback(uint32_t* value) {
-  uint8_t bytes[sizeof(*value)];
+bool CodedInputStream::ReadLittleEndian16Fallback(uint16_t* value) {
+  constexpr size_t kSize = sizeof(*value);
+  uint8_t bytes[kSize];
 
   const uint8_t* ptr;
-  if (BufferSize() >= static_cast<int64_t>(sizeof(*value))) {
+  if (BufferSize() >= static_cast<int64_t>(kSize)) {
     // Fast path:  Enough bytes in the buffer to read directly.
     ptr = buffer_;
-    Advance(sizeof(*value));
+    Advance(kSize);
   } else {
     // Slow path:  Had to read past the end of the buffer.
-    if (!ReadRaw(bytes, sizeof(*value))) return false;
+    if (!ReadRaw(bytes, kSize)) return false;
+    ptr = bytes;
+  }
+  ReadLittleEndian16FromArray(ptr, value);
+  return true;
+}
+
+bool CodedInputStream::ReadLittleEndian32Fallback(uint32_t* value) {
+  constexpr size_t kSize = sizeof(*value);
+  uint8_t bytes[kSize];
+
+  const uint8_t* ptr;
+  if (BufferSize() >= static_cast<int64_t>(kSize)) {
+    // Fast path:  Enough bytes in the buffer to read directly.
+    ptr = buffer_;
+    Advance(kSize);
+  } else {
+    // Slow path:  Had to read past the end of the buffer.
+    if (!ReadRaw(bytes, kSize)) return false;
     ptr = bytes;
   }
   ReadLittleEndian32FromArray(ptr, value);
@@ -382,16 +382,17 @@ bool CodedInputStream::ReadLittleEndian32Fallback(uint32_t* value) {
 }
 
 bool CodedInputStream::ReadLittleEndian64Fallback(uint64_t* value) {
-  uint8_t bytes[sizeof(*value)];
+  constexpr size_t kSize = sizeof(*value);
+  uint8_t bytes[kSize];
 
   const uint8_t* ptr;
-  if (BufferSize() >= static_cast<int64_t>(sizeof(*value))) {
+  if (BufferSize() >= static_cast<int64_t>(kSize)) {
     // Fast path:  Enough bytes in the buffer to read directly.
     ptr = buffer_;
-    Advance(sizeof(*value));
+    Advance(kSize);
   } else {
     // Slow path:  Had to read past the end of the buffer.
-    if (!ReadRaw(bytes, sizeof(*value))) return false;
+    if (!ReadRaw(bytes, kSize)) return false;
     ptr = bytes;
   }
   ReadLittleEndian64FromArray(ptr, value);
@@ -405,7 +406,7 @@ namespace {
 // subtracting 0x80 at each iteration, it subtracts properly shifted mask once.
 template <size_t N>
 const uint8_t* DecodeVarint64KnownSize(const uint8_t* buffer, uint64_t* value) {
-  GOOGLE_ABSL_DCHECK_GT(N, 0);
+  ABSL_DCHECK_GT(N, 0);
   uint64_t result = static_cast<uint64_t>(buffer[N - 1]) << (7 * (N - 1));
   for (size_t i = 0, offset = 0; i < N - 1; i++, offset += 7) {
     result += static_cast<uint64_t>(buffer[i] - 0x80) << offset;
@@ -426,8 +427,8 @@ inline ::std::pair<bool, const uint8_t*> ReadVarint32FromArray(
     uint32_t first_byte, const uint8_t* buffer, uint32_t* value) {
   // Fast path:  We have enough bytes left in the buffer to guarantee that
   // this read won't cross the end, so we can skip the checks.
-  GOOGLE_ABSL_DCHECK_EQ(*buffer, first_byte);
-  GOOGLE_ABSL_DCHECK_EQ(first_byte & 0x80, 0x80) << first_byte;
+  ABSL_DCHECK_EQ(*buffer, first_byte);
+  ABSL_DCHECK_EQ(first_byte & 0x80, 0x80) << first_byte;
   const uint8_t* ptr = buffer;
   uint32_t b;
   uint32_t result = first_byte - 0x80;
@@ -470,7 +471,7 @@ PROTOBUF_ALWAYS_INLINE::std::pair<bool, const uint8_t*> ReadVarint64FromArray(
 inline ::std::pair<bool, const uint8_t*> ReadVarint64FromArray(
     const uint8_t* buffer, uint64_t* value) {
   // Assumes varint64 is at least 2 bytes.
-  GOOGLE_ABSL_DCHECK_GE(buffer[0], 128);
+  ABSL_DCHECK_GE(buffer[0], 128);
 
   const uint8_t* next;
   if (buffer[1] < 128) {
@@ -515,7 +516,7 @@ int64_t CodedInputStream::ReadVarint32Fallback(uint32_t first_byte_or_zero) {
       // Optimization:  We're also safe if the buffer is non-empty and it ends
       // with a byte that would terminate a varint.
       (buffer_end_ > buffer_ && !(buffer_end_[-1] & 0x80))) {
-    GOOGLE_ABSL_DCHECK_NE(first_byte_or_zero, 0)
+    ABSL_DCHECK_NE(first_byte_or_zero, 0)
         << "Caller should provide us with *buffer_ when buffer is non-empty";
     uint32_t temp;
     ::std::pair<bool, const uint8_t*> p =
@@ -590,7 +591,7 @@ uint32_t CodedInputStream::ReadTagFallback(uint32_t first_byte_or_zero) {
       // Optimization:  We're also safe if the buffer is non-empty and it ends
       // with a byte that would terminate a varint.
       (buf_size > 0 && !(buffer_end_[-1] & 0x80))) {
-    GOOGLE_ABSL_DCHECK_EQ(first_byte_or_zero, buffer_[0]);
+    ABSL_DCHECK_EQ(first_byte_or_zero, buffer_[0]);
     if (first_byte_or_zero == 0) {
       ++buffer_;
       return 0;
@@ -670,7 +671,7 @@ std::pair<uint64_t, bool> CodedInputStream::ReadVarint64Fallback() {
 }
 
 bool CodedInputStream::Refresh() {
-  GOOGLE_ABSL_DCHECK_EQ(0, BufferSize());
+  ABSL_DCHECK_EQ(0, BufferSize());
 
   if (buffer_size_after_limit_ > 0 || overflow_bytes_ > 0 ||
       total_bytes_read_ == current_limit_) {
@@ -691,7 +692,7 @@ bool CodedInputStream::Refresh() {
   if (NextNonEmpty(input_, &void_buffer, &buffer_size)) {
     buffer_ = reinterpret_cast<const uint8_t*>(void_buffer);
     buffer_end_ = buffer_ + buffer_size;
-    GOOGLE_ABSL_CHECK_GE(buffer_size, 0);
+    ABSL_CHECK_GE(buffer_size, 0);
 
     if (total_bytes_read_ <= INT_MAX - buffer_size) {
       total_bytes_read_ += buffer_size;
@@ -714,8 +715,8 @@ bool CodedInputStream::Refresh() {
     RecomputeBufferLimits();
     return true;
   } else {
-    buffer_ = NULL;
-    buffer_end_ = NULL;
+    buffer_ = nullptr;
+    buffer_end_ = nullptr;
     return false;
   }
 }
@@ -738,8 +739,8 @@ int64_t EpsCopyOutputStream::ByteCount(uint8_t* ptr) const {
 int EpsCopyOutputStream::Flush(uint8_t* ptr) {
   while (buffer_end_ && ptr > end_) {
     int overrun = ptr - end_;
-    GOOGLE_ABSL_DCHECK(!had_error_);
-    GOOGLE_ABSL_DCHECK(overrun <= kSlopBytes);  // NOLINT
+    ABSL_DCHECK(!had_error_);
+    ABSL_DCHECK(overrun <= kSlopBytes);  // NOLINT
     ptr = Next() + overrun;
     if (had_error_) return 0;
   }
@@ -753,7 +754,7 @@ int EpsCopyOutputStream::Flush(uint8_t* ptr) {
     s = end_ + kSlopBytes - ptr;
     buffer_end_ = ptr;
   }
-  GOOGLE_ABSL_DCHECK(s >= 0);  // NOLINT
+  ABSL_DCHECK(s >= 0);  // NOLINT
   return s;
 }
 
@@ -841,8 +842,8 @@ uint8_t* EpsCopyOutputStream::GetDirectBufferForNBytesAndAdvance(int size,
 }
 
 uint8_t* EpsCopyOutputStream::Next() {
-  GOOGLE_ABSL_DCHECK(!had_error_);  // NOLINT
-  if (PROTOBUF_PREDICT_FALSE(stream_ == nullptr)) return Error();
+  ABSL_DCHECK(!had_error_);  // NOLINT
+  if (ABSL_PREDICT_FALSE(stream_ == nullptr)) return Error();
   if (buffer_end_) {
     // We're in the patch buffer and need to fill up the previous buffer.
     std::memcpy(buffer_end_, buffer_, end_ - buffer_);
@@ -850,20 +851,20 @@ uint8_t* EpsCopyOutputStream::Next() {
     int size;
     do {
       void* data;
-      if (PROTOBUF_PREDICT_FALSE(!stream_->Next(&data, &size))) {
+      if (ABSL_PREDICT_FALSE(!stream_->Next(&data, &size))) {
         // Stream has an error, we use the patch buffer to continue to be
         // able to write.
         return Error();
       }
       ptr = static_cast<uint8_t*>(data);
     } while (size == 0);
-    if (PROTOBUF_PREDICT_TRUE(size > kSlopBytes)) {
+    if (ABSL_PREDICT_TRUE(size > kSlopBytes)) {
       std::memcpy(ptr, end_, kSlopBytes);
       end_ = ptr + size - kSlopBytes;
       buffer_end_ = nullptr;
       return ptr;
     } else {
-      GOOGLE_ABSL_DCHECK(size > 0);  // NOLINT
+      ABSL_DCHECK(size > 0);  // NOLINT
       // Buffer to small
       std::memmove(buffer_, end_, kSlopBytes);
       buffer_end_ = ptr;
@@ -880,13 +881,13 @@ uint8_t* EpsCopyOutputStream::Next() {
 
 uint8_t* EpsCopyOutputStream::EnsureSpaceFallback(uint8_t* ptr) {
   do {
-    if (PROTOBUF_PREDICT_FALSE(had_error_)) return buffer_;
+    if (ABSL_PREDICT_FALSE(had_error_)) return buffer_;
     int overrun = ptr - end_;
-    GOOGLE_ABSL_DCHECK(overrun >= 0);           // NOLINT
-    GOOGLE_ABSL_DCHECK(overrun <= kSlopBytes);  // NOLINT
+    ABSL_DCHECK(overrun >= 0);           // NOLINT
+    ABSL_DCHECK(overrun <= kSlopBytes);  // NOLINT
     ptr = Next() + overrun;
   } while (ptr >= end_);
-  GOOGLE_ABSL_DCHECK(ptr < end_);  // NOLINT
+  ABSL_DCHECK(ptr < end_);  // NOLINT
   return ptr;
 }
 
@@ -916,7 +917,7 @@ uint8_t* EpsCopyOutputStream::WriteAliasedRaw(const void* data, int size,
   }
 }
 
-#ifndef PROTOBUF_LITTLE_ENDIAN
+#ifndef ABSL_IS_LITTLE_ENDIAN
 uint8_t* EpsCopyOutputStream::WriteRawLittleEndian32(const void* data, int size,
                                                    uint8_t* ptr) {
   auto p = static_cast<const uint8_t*>(data);
@@ -985,25 +986,17 @@ uint8_t* EpsCopyOutputStream::WriteCord(const absl::Cord& cord, uint8_t* ptr) {
   }
 }
 
-uint8_t* EpsCopyOutputStream::WriteStringMaybeAliasedOutline(uint32_t num,
-                                                           const std::string& s,
-                                                           uint8_t* ptr) {
+uint8_t* EpsCopyOutputStream::WriteStringMaybeAliasedOutline(
+    uint32_t num, absl::string_view s, uint8_t* ptr) {
   ptr = EnsureSpace(ptr);
   uint32_t size = s.size();
   ptr = WriteLengthDelim(num, size, ptr);
   return WriteRawMaybeAliased(s.data(), size, ptr);
 }
 
-uint8_t* EpsCopyOutputStream::WriteStringOutline(uint32_t num, const std::string& s,
-                                               uint8_t* ptr) {
-  ptr = EnsureSpace(ptr);
-  uint32_t size = s.size();
-  ptr = WriteLengthDelim(num, size, ptr);
-  return WriteRaw(s.data(), size, ptr);
-}
-
-uint8_t* EpsCopyOutputStream::WriteStringOutline(uint32_t num, absl::string_view s,
-                                               uint8_t* ptr) {
+uint8_t* EpsCopyOutputStream::WriteStringOutline(uint32_t num,
+                                                 absl::string_view s,
+                                                 uint8_t* ptr) {
   ptr = EnsureSpace(ptr);
   uint32_t size = s.size();
   ptr = WriteLengthDelim(num, size, ptr);
@@ -1027,9 +1020,9 @@ uint8_t* CodedOutputStream::WriteCordToArray(const absl::Cord& cord,
 }
 
 
-uint8_t* CodedOutputStream::WriteStringWithSizeToArray(const std::string& str,
-                                                     uint8_t* target) {
-  GOOGLE_ABSL_DCHECK_LE(str.size(), std::numeric_limits<uint32_t>::max());
+uint8_t* CodedOutputStream::WriteStringWithSizeToArray(absl::string_view str,
+                                                       uint8_t* target) {
+  ABSL_DCHECK_LE(str.size(), std::numeric_limits<uint32_t>::max());
   target = WriteVarint32ToArray(str.size(), target);
   return WriteStringToArray(str, target);
 }

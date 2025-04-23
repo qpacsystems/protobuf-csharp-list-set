@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // This file contains routines to generate tail-call table parsing tables.
 // Everything in this file is for internal use only.
@@ -34,14 +11,14 @@
 #ifndef GOOGLE_PROTOBUF_GENERATED_MESSAGE_TCTABLE_GEN_H__
 #define GOOGLE_PROTOBUF_GENERATED_MESSAGE_TCTABLE_GEN_H__
 
+#include <cstddef>
 #include <cstdint>
-#include <functional>
-#include <string>
 #include <vector>
 
+#include "absl/types/optional.h"
+#include "absl/types/span.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/descriptor.pb.h"
-#include "google/protobuf/generated_message_tctable_decl.h"
 
 // Must come last:
 #include "google/protobuf/port_def.inc"
@@ -49,39 +26,86 @@
 namespace google {
 namespace protobuf {
 namespace internal {
+enum class TcParseFunction : uint8_t;
+
+namespace field_layout {
+enum TransformValidation : uint16_t;
+}  // namespace field_layout
+
+PROTOBUF_EXPORT uint32_t
+GetRecodedTagForFastParsing(const FieldDescriptor* field);
+
+PROTOBUF_EXPORT absl::optional<uint32_t> GetEndGroupTag(
+    const Descriptor* descriptor);
+
+PROTOBUF_EXPORT uint32_t
+FastParseTableSize(size_t num_fields, absl::optional<uint32_t> end_group_tag);
+
+PROTOBUF_EXPORT bool IsFieldTypeEligibleForFastParsing(
+    const FieldDescriptor* field);
 
 // Helper class for generating tailcall parsing functions.
 struct PROTOBUF_EXPORT TailCallTableInfo {
-  struct PerFieldOptions {
-    bool is_lazy;
+  // The tailcall parser can only update the first 32 hasbits. Fields with
+  // has-bits beyond the first 32 are handled by mini parsing/fallback.
+  static constexpr int kMaxFastFieldHasbitIndex = 31;
+
+  struct MessageOptions {
+    bool is_lite;
+    bool uses_codegen;
+  };
+  struct FieldOptions {
+    const FieldDescriptor* field;
+    int has_bit_index;
+    // For presence awareness (e.g. PDProto).
+    float presence_probability;
+    // kTvEager, kTvLazy, or 0
+    field_layout::TransformValidation lazy_opt;
     bool is_string_inlined;
     bool is_implicitly_weak;
     bool use_direct_tcparser_table;
-    bool is_lite;
     bool should_split;
+    int inlined_string_index;
+    bool use_micro_string;
   };
-  class OptionProvider {
-   public:
-    virtual PerFieldOptions GetForField(const FieldDescriptor*) const = 0;
 
-   protected:
-    ~OptionProvider() = default;
-  };
+  struct FieldEntryInfo;
+  struct AuxEntry;
+
+  static std::vector<FieldEntryInfo> BuildFieldEntries(
+      const Descriptor* descriptor, const MessageOptions& message_options,
+      absl::Span<const FieldOptions> ordered_fields,
+      std::vector<AuxEntry>& aux_entries);
 
   TailCallTableInfo(const Descriptor* descriptor,
-                    const std::vector<const FieldDescriptor*>& ordered_fields,
-                    const OptionProvider& option_provider,
-                    const std::vector<int>& has_bit_indices,
-                    const std::vector<int>& inlined_string_indices);
+                    const MessageOptions& message_options,
+                    absl::Span<const FieldOptions> ordered_fields);
+
+  TcParseFunction fallback_function;
 
   // Fields parsed by the table fast-path.
   struct FastFieldInfo {
-    std::string func_name;
-    const FieldDescriptor* field;
-    uint16_t coded_tag;
-    uint8_t hasbit_idx;
-    uint8_t aux_idx;
-    uint16_t nonfield_info;
+    struct Empty {};
+    struct Field {
+      TcParseFunction func;
+      const FieldDescriptor* field;
+      uint16_t coded_tag;
+      uint8_t hasbit_idx;
+      uint8_t aux_idx;
+
+      // For internal caching.
+      float presence_probability;
+    };
+    struct NonField {
+      TcParseFunction func;
+      uint16_t coded_tag;
+      uint16_t nonfield_info;
+    };
+    std::variant<Empty, Field, NonField> data;
+
+    bool is_empty() const { return std::holds_alternative<Empty>(data); }
+    const Field* AsField() const { return std::get_if<Field>(&data); }
+    const NonField* AsNonField() const { return std::get_if<NonField>(&data); }
   };
   std::vector<FastFieldInfo> fast_path_fields;
 
@@ -92,6 +116,9 @@ struct PROTOBUF_EXPORT TailCallTableInfo {
     int inlined_string_idx;
     uint16_t aux_idx;
     uint16_t type_card;
+
+    // For internal caching.
+    cpp::Utf8CheckMode utf8_check_mode;
   };
   std::vector<FieldEntryInfo> field_entries;
 
@@ -103,26 +130,27 @@ struct PROTOBUF_EXPORT TailCallTableInfo {
     kSubMessage,
     kSubTable,
     kSubMessageWeak,
+    kMessageVerifyFunc,
+    kSelfVerifyFunc,
     kEnumRange,
     kEnumValidator,
     kNumericOffset,
+    kMapAuxInfo,
   };
   struct AuxEntry {
     AuxType type;
     struct EnumRange {
-      int16_t start;
-      uint16_t size;
+      int32_t first;
+      int32_t last;
     };
     union {
       const FieldDescriptor* field;
+      const Descriptor* desc;
       uint32_t offset;
       EnumRange enum_range;
     };
   };
   std::vector<AuxEntry> aux_entries;
-
-  // Fields parsed by generated fallback function.
-  std::vector<const FieldDescriptor*> fallback_fields;
 
   struct SkipEntry16 {
     uint16_t skipmap;
@@ -151,8 +179,6 @@ struct PROTOBUF_EXPORT TailCallTableInfo {
 
   // Table size.
   int table_size_log2;
-  // True if a generated fallback function is required instead of generic.
-  bool use_generated_fallback;
 };
 
 }  // namespace internal

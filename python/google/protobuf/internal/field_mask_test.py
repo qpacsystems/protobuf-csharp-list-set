@@ -1,42 +1,21 @@
 # Protocol Buffers - Google's data interchange format
 # Copyright 2008 Google Inc.  All rights reserved.
-# https://developers.google.com/protocol-buffers/
 #
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are
-# met:
-#
-#     * Redistributions of source code must retain the above copyright
-# notice, this list of conditions and the following disclaimer.
-#     * Redistributions in binary form must reproduce the above
-# copyright notice, this list of conditions and the following disclaimer
-# in the documentation and/or other materials provided with the
-# distribution.
-#     * Neither the name of Google Inc. nor the names of its
-# contributors may be used to endorse or promote products derived from
-# this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file or at
+# https://developers.google.com/open-source/licenses/bsd
 
 """Test for google3.net.proto2.python.internal.well_known_types."""
 
 import unittest
 
-from google.protobuf import field_mask_pb2
+from google.protobuf import descriptor
 from google.protobuf.internal import field_mask
 from google.protobuf.internal import test_util
-from google.protobuf import descriptor
+
+from google.protobuf import field_mask_pb2
 from google.protobuf import map_unittest_pb2
+from google.protobuf import unittest_no_field_presence_pb2
 from google.protobuf import unittest_pb2
 
 
@@ -76,7 +55,7 @@ class FieldMaskTest(unittest.TestCase):
     mask = field_mask_pb2.FieldMask()
     msg_descriptor = unittest_pb2.TestAllTypes.DESCRIPTOR
     mask.AllFieldsFromDescriptor(msg_descriptor)
-    self.assertEqual(76, len(mask.paths))
+    self.assertEqual(80, len(mask.paths))
     self.assertTrue(mask.IsValidForDescriptor(msg_descriptor))
     for field in msg_descriptor.fields:
       self.assertTrue(field.name in mask.paths)
@@ -129,22 +108,16 @@ class FieldMaskTest(unittest.TestCase):
     self.assertEqual('bar,foo.b1,foo.b2', out_mask.ToJsonString())
 
     # Test more deeply nested cases.
-    mask.FromJsonString(
-        'foo.bar.baz1,foo.bar.baz2.quz,foo.bar.baz2')
+    mask.FromJsonString('foo.bar.baz1,foo.bar.baz2.quz,foo.bar.baz2')
     out_mask.CanonicalFormFromMask(mask)
-    self.assertEqual('foo.bar.baz1,foo.bar.baz2',
-                     out_mask.ToJsonString())
-    mask.FromJsonString(
-        'foo.bar.baz1,foo.bar.baz2,foo.bar.baz2.quz')
+    self.assertEqual('foo.bar.baz1,foo.bar.baz2', out_mask.ToJsonString())
+    mask.FromJsonString('foo.bar.baz1,foo.bar.baz2,foo.bar.baz2.quz')
     out_mask.CanonicalFormFromMask(mask)
-    self.assertEqual('foo.bar.baz1,foo.bar.baz2',
-                     out_mask.ToJsonString())
-    mask.FromJsonString(
-        'foo.bar.baz1,foo.bar.baz2,foo.bar.baz2.quz,foo.bar')
+    self.assertEqual('foo.bar.baz1,foo.bar.baz2', out_mask.ToJsonString())
+    mask.FromJsonString('foo.bar.baz1,foo.bar.baz2,foo.bar.baz2.quz,foo.bar')
     out_mask.CanonicalFormFromMask(mask)
     self.assertEqual('foo.bar', out_mask.ToJsonString())
-    mask.FromJsonString(
-        'foo.bar.baz1,foo.bar.baz2,foo.bar.baz2.quz,foo')
+    mask.FromJsonString('foo.bar.baz1,foo.bar.baz2,foo.bar.baz2.quz,foo')
     out_mask.CanonicalFormFromMask(mask)
     self.assertEqual('foo', out_mask.ToJsonString())
 
@@ -314,6 +287,36 @@ class FieldMaskTest(unittest.TestCase):
     self.assertTrue(dst.HasField('foo_message'))
     self.assertFalse(dst.HasField('foo_lazy_message'))
 
+  def testMergeMessageWithoutMapFieldsOrFieldPresence(self):
+    # Test merge one field.
+    src = unittest_no_field_presence_pb2.TestAllTypes()
+    test_util.SetAllFields(src)
+    for field in src.DESCRIPTOR.fields:
+      if field.containing_oneof:
+        continue
+      field_name = field.name
+      dst = unittest_no_field_presence_pb2.TestAllTypes()
+      # Only set one path to mask.
+      mask = field_mask_pb2.FieldMask()
+      mask.paths.append(field_name)
+      mask.MergeMessage(src, dst)
+      # The expected result message.
+      msg = unittest_no_field_presence_pb2.TestAllTypes()
+      if field.label == descriptor.FieldDescriptor.LABEL_REPEATED:
+        repeated_src = getattr(src, field_name)
+        repeated_msg = getattr(msg, field_name)
+        if field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_MESSAGE:
+          for item in repeated_src:
+            repeated_msg.add().CopyFrom(item)
+        else:
+          repeated_msg.extend(repeated_src)
+      elif field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_MESSAGE:
+        getattr(msg, field_name).CopyFrom(getattr(src, field_name))
+      else:
+        setattr(msg, field_name, getattr(src, field_name))
+      # Only field specified in mask is merged.
+      self.assertEqual(msg, dst)
+
   def testMergeMessageWithMapField(self):
     empty_map = map_unittest_pb2.TestRecursiveMapMessage()
     src_level_2 = map_unittest_pb2.TestRecursiveMapMessage()
@@ -337,6 +340,74 @@ class FieldMaskTest(unittest.TestCase):
     self.assertEqual(dst.a['src level 1'], src_level_2)
     self.assertEqual(dst.a['dst level 1'], empty_map)
 
+  def testMergeMessageWithUnsetFieldsWithFieldPresence(self):
+    # Test merging each empty field one at a time.
+    src = unittest_pb2.TestAllTypes()
+    for field in src.DESCRIPTOR.fields:
+      if field.containing_oneof:
+        continue
+      field_name = field.name
+      dst = unittest_pb2.TestAllTypes()
+      # Only set one path to mask.
+      mask = field_mask_pb2.FieldMask()
+      mask.paths.append(field_name)
+      mask.MergeMessage(src, dst)
+      # Nothing should be merged.
+      self.assertEqual(unittest_pb2.TestAllTypes(), dst)
+
+    # Test merge clears previously set fields when source is unset.
+    dst_template = unittest_pb2.TestAllTypes()
+    test_util.SetAllFields(dst_template)
+    for field in src.DESCRIPTOR.fields:
+      if field.containing_oneof:
+        continue
+      dst = unittest_pb2.TestAllTypes()
+      dst.CopyFrom(dst_template)
+      # Only set one path to mask.
+      mask = field_mask_pb2.FieldMask()
+      mask.paths.append(field.name)
+      mask.MergeMessage(
+          src, dst, replace_message_field=True, replace_repeated_field=True
+      )
+      msg = unittest_pb2.TestAllTypes()
+      msg.CopyFrom(dst_template)
+      msg.ClearField(field.name)
+      self.assertEqual(msg, dst)
+
+  def testMergeMessageWithUnsetFieldsWithoutFieldPresence(self):
+    # Test merging each empty field one at a time.
+    src = unittest_no_field_presence_pb2.TestAllTypes()
+    for field in src.DESCRIPTOR.fields:
+      if field.containing_oneof:
+        continue
+      field_name = field.name
+      dst = unittest_no_field_presence_pb2.TestAllTypes()
+      # Only set one path to mask.
+      mask = field_mask_pb2.FieldMask()
+      mask.paths.append(field_name)
+      mask.MergeMessage(src, dst)
+      # Nothing should be merged.
+      self.assertEqual(unittest_no_field_presence_pb2.TestAllTypes(), dst)
+
+    # Test merge clears previously set fields when source is unset.
+    dst_template = unittest_no_field_presence_pb2.TestAllTypes()
+    test_util.SetAllFields(dst_template)
+    for field in src.DESCRIPTOR.fields:
+      if field.containing_oneof:
+        continue
+      dst = unittest_no_field_presence_pb2.TestAllTypes()
+      dst.CopyFrom(dst_template)
+      # Only set one path to mask.
+      mask = field_mask_pb2.FieldMask()
+      mask.paths.append(field.name)
+      mask.MergeMessage(
+          src, dst, replace_message_field=True, replace_repeated_field=True
+      )
+      msg = unittest_no_field_presence_pb2.TestAllTypes()
+      msg.CopyFrom(dst_template)
+      msg.ClearField(field.name)
+      self.assertEqual(msg, dst)
+
   def testMergeErrors(self):
     src = unittest_pb2.TestAllTypes()
     dst = unittest_pb2.TestAllTypes()
@@ -345,25 +416,26 @@ class FieldMaskTest(unittest.TestCase):
     mask.FromJsonString('optionalInt32.field')
     with self.assertRaises(ValueError) as e:
       mask.MergeMessage(src, dst)
-    self.assertEqual('Error: Field optional_int32 in message '
-                     'protobuf_unittest.TestAllTypes is not a singular '
-                     'message field and cannot have sub-fields.',
-                     str(e.exception))
+    self.assertEqual(
+        'Error: Field optional_int32 in message '
+        'proto2_unittest.TestAllTypes is not a singular '
+        'message field and cannot have sub-fields.',
+        str(e.exception),
+    )
 
   def testSnakeCaseToCamelCase(self):
-    self.assertEqual('fooBar',
-                     field_mask._SnakeCaseToCamelCase('foo_bar'))
-    self.assertEqual('FooBar',
-                     field_mask._SnakeCaseToCamelCase('_foo_bar'))
-    self.assertEqual('foo3Bar',
-                     field_mask._SnakeCaseToCamelCase('foo3_bar'))
+    self.assertEqual('fooBar', field_mask._SnakeCaseToCamelCase('foo_bar'))
+    self.assertEqual('FooBar', field_mask._SnakeCaseToCamelCase('_foo_bar'))
+    self.assertEqual('foo3Bar', field_mask._SnakeCaseToCamelCase('foo3_bar'))
 
     # No uppercase letter is allowed.
     self.assertRaisesRegex(
         ValueError,
         'Fail to print FieldMask to Json string: Path name Foo must '
         'not contain uppercase letters.',
-        field_mask._SnakeCaseToCamelCase, 'Foo')
+        field_mask._SnakeCaseToCamelCase,
+        'Foo',
+    )
     # Any character after a "_" must be a lowercase letter.
     #   1. "_" cannot be followed by another "_".
     #   2. "_" cannot be followed by a digit.
@@ -372,28 +444,34 @@ class FieldMaskTest(unittest.TestCase):
         ValueError,
         'Fail to print FieldMask to Json string: The character after a '
         '"_" must be a lowercase letter in path name foo__bar.',
-        field_mask._SnakeCaseToCamelCase, 'foo__bar')
+        field_mask._SnakeCaseToCamelCase,
+        'foo__bar',
+    )
     self.assertRaisesRegex(
         ValueError,
         'Fail to print FieldMask to Json string: The character after a '
         '"_" must be a lowercase letter in path name foo_3bar.',
-        field_mask._SnakeCaseToCamelCase, 'foo_3bar')
+        field_mask._SnakeCaseToCamelCase,
+        'foo_3bar',
+    )
     self.assertRaisesRegex(
         ValueError,
         'Fail to print FieldMask to Json string: Trailing "_" in path '
-        'name foo_bar_.', field_mask._SnakeCaseToCamelCase, 'foo_bar_')
+        'name foo_bar_.',
+        field_mask._SnakeCaseToCamelCase,
+        'foo_bar_',
+    )
 
   def testCamelCaseToSnakeCase(self):
-    self.assertEqual('foo_bar',
-                     field_mask._CamelCaseToSnakeCase('fooBar'))
-    self.assertEqual('_foo_bar',
-                     field_mask._CamelCaseToSnakeCase('FooBar'))
-    self.assertEqual('foo3_bar',
-                     field_mask._CamelCaseToSnakeCase('foo3Bar'))
+    self.assertEqual('foo_bar', field_mask._CamelCaseToSnakeCase('fooBar'))
+    self.assertEqual('_foo_bar', field_mask._CamelCaseToSnakeCase('FooBar'))
+    self.assertEqual('foo3_bar', field_mask._CamelCaseToSnakeCase('foo3Bar'))
     self.assertRaisesRegex(
         ValueError,
         'Fail to parse FieldMask: Path name foo_bar must not contain "_"s.',
-        field_mask._CamelCaseToSnakeCase, 'foo_bar')
+        field_mask._CamelCaseToSnakeCase,
+        'foo_bar',
+    )
 
 
 if __name__ == '__main__':

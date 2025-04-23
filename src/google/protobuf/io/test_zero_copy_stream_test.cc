@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2023 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 #include "google/protobuf/io/test_zero_copy_stream.h"
 
@@ -68,7 +45,7 @@ std::vector<std::string> ReadLeftoverDoNotConsumeInput(
   return out;
 }
 
-#if PROTOBUF_HAS_DEATH_TEST
+#if GTEST_HAS_DEATH_TEST
 TEST(TestZeroCopyInputStreamTest, NextChecksPreconditions) {
   std::unique_ptr<ZeroCopyInputStream> stream =
       std::make_unique<TestZeroCopyInputStream>(std::vector<std::string>{});
@@ -77,7 +54,7 @@ TEST(TestZeroCopyInputStreamTest, NextChecksPreconditions) {
   EXPECT_DEATH(stream->Next(nullptr, &size), "data must not be null");
   EXPECT_DEATH(stream->Next(&data, nullptr), "size must not be null");
 }
-#endif  // PROTOBUF_HAS_DEATH_TEST
+#endif  // GTEST_HAS_DEATH_TEST
 
 TEST(TestZeroCopyInputStreamTest, NextProvidesTheBuffersCorrectly) {
   std::vector<std::string> expected = {"ABC", "D", "EFG", "", "", "HIJKLMN"};
@@ -116,30 +93,34 @@ TEST(TestZeroCopyInputStreamTest, BackUpGivesBackABuffer) {
   EXPECT_THAT(CallNext(*stream), Eq(absl::nullopt));
 }
 
-#if PROTOBUF_HAS_DEATH_TEST
+#if GTEST_HAS_DEATH_TEST
 TEST(TestZeroCopyInputStreamTest, BackUpChecksPreconditions) {
   std::vector<std::string> expected = {"ABC", "D", "EFG", "", "", "HIJKLMN"};
   std::unique_ptr<ZeroCopyInputStream> stream =
       std::make_unique<TestZeroCopyInputStream>(expected);
 
-  EXPECT_DEATH(stream->BackUp(0), "The last call was not a successful Next()");
+  EXPECT_DEATH(stream->BackUp(0),
+               "The last call was not a successful Next\\(\\)");
   EXPECT_THAT(CallNext(*stream), Optional(Eq("ABC")));
   EXPECT_DEATH(stream->BackUp(-1), "count must not be negative");
   stream->BackUp(1);
-  EXPECT_DEATH(stream->BackUp(0), "The last call was not a successful Next()");
+  EXPECT_DEATH(stream->BackUp(0),
+               "The last call was not a successful Next\\(\\)");
   EXPECT_THAT(CallNext(*stream), Optional(Eq("C")));
   EXPECT_THAT(CallNext(*stream), Optional(Eq("D")));
   stream->Skip(1);
-  EXPECT_DEATH(stream->BackUp(0), "The last call was not a successful Next()");
+  EXPECT_DEATH(stream->BackUp(0),
+               "The last call was not a successful Next\\(\\)");
   EXPECT_THAT(CallNext(*stream), Optional(Eq("FG")));
   EXPECT_THAT(CallNext(*stream), Optional(Eq("")));
   EXPECT_THAT(CallNext(*stream), Optional(Eq("")));
   EXPECT_THAT(CallNext(*stream), Optional(Eq("HIJKLMN")));
   EXPECT_DEATH(stream->BackUp(8), "count must be within bounds of last buffer");
   EXPECT_THAT(CallNext(*stream), Eq(absl::nullopt));
-  EXPECT_DEATH(stream->BackUp(0), "The last call was not a successful Next()");
+  EXPECT_DEATH(stream->BackUp(0),
+               "The last call was not a successful Next\\(\\)");
 }
-#endif  // PROTOBUF_HAS_DEATH_TEST
+#endif  // GTEST_HAS_DEATH_TEST
 
 TEST(TestZeroCopyInputStreamTest, SkipWorks) {
   std::vector<std::string> expected = {"ABC", "D", "EFG", "", "", "HIJKLMN"};
@@ -172,13 +153,13 @@ TEST(TestZeroCopyInputStreamTest, SkipWorks) {
   EXPECT_FALSE(stream.Skip(1));
 }
 
-#if PROTOBUF_HAS_DEATH_TEST
+#if GTEST_HAS_DEATH_TEST
 TEST(TestZeroCopyInputStreamTest, SkipChecksPreconditions) {
   std::unique_ptr<ZeroCopyInputStream> stream =
       std::make_unique<TestZeroCopyInputStream>(std::vector<std::string>{});
   EXPECT_DEATH(stream->Skip(-1), "count must not be negative");
 }
-#endif  // PROTOBUF_HAS_DEATH_TEST
+#endif  // GTEST_HAS_DEATH_TEST
 
 TEST(TestZeroCopyInputStreamTest, ByteCountWorks) {
   std::vector<std::string> expected = {"ABC", "D", "EFG", "", "", "HIJKLMN"};

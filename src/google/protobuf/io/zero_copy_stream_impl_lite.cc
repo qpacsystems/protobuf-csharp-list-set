@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // Author: kenton@google.com (Kenton Varda)
 //  Based on original Protocol Buffers design by
@@ -35,14 +12,23 @@
 #include "google/protobuf/io/zero_copy_stream_impl_lite.h"
 
 #include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <limits>
+#include <string>
 #include <utility>
 
-#include "google/protobuf/stubs/common.h"
 #include "absl/base/casts.h"
-#include "google/protobuf/stubs/logging.h"
+#include "absl/log/absl_check.h"
 #include "absl/strings/cord.h"
+#include "absl/strings/cord_buffer.h"
 #include "absl/strings/internal/resize_uninitialized.h"
+#include "absl/strings/string_view.h"
+#include "absl/types/span.h"
+#include "google/protobuf/io/zero_copy_stream.h"
+
 
 // Must be included last
 #include "google/protobuf/port_def.inc"
@@ -82,16 +68,16 @@ bool ArrayInputStream::Next(const void** data, int* size) {
 }
 
 void ArrayInputStream::BackUp(int count) {
-  GOOGLE_ABSL_CHECK_GT(last_returned_size_, 0)
+  ABSL_CHECK_GT(last_returned_size_, 0)
       << "BackUp() can only be called after a successful Next().";
-  GOOGLE_ABSL_CHECK_LE(count, last_returned_size_);
-  GOOGLE_ABSL_CHECK_GE(count, 0);
+  ABSL_CHECK_LE(count, last_returned_size_);
+  ABSL_CHECK_GE(count, 0);
   position_ -= count;
   last_returned_size_ = 0;  // Don't let caller back up further.
 }
 
 bool ArrayInputStream::Skip(int count) {
-  GOOGLE_ABSL_CHECK_GE(count, 0);
+  ABSL_CHECK_GE(count, 0);
   last_returned_size_ = 0;  // Don't let caller back up.
   if (count > size_ - position_) {
     position_ = size_;
@@ -129,9 +115,9 @@ bool ArrayOutputStream::Next(void** data, int* size) {
 }
 
 void ArrayOutputStream::BackUp(int count) {
-  GOOGLE_ABSL_CHECK_LE(count, last_returned_size_)
+  ABSL_CHECK_LE(count, last_returned_size_)
       << "BackUp() can not exceed the size of the last Next() call.";
-  GOOGLE_ABSL_CHECK_GE(count, 0);
+  ABSL_CHECK_GE(count, 0);
   position_ -= count;
   last_returned_size_ -= count;
 }
@@ -143,7 +129,7 @@ int64_t ArrayOutputStream::ByteCount() const { return position_; }
 StringOutputStream::StringOutputStream(std::string* target) : target_(target) {}
 
 bool StringOutputStream::Next(void** data, int* size) {
-  GOOGLE_ABSL_CHECK(target_ != NULL);
+  ABSL_CHECK(target_ != nullptr);
   size_t old_size = target_->size();
 
   // Grow the string.
@@ -170,14 +156,14 @@ bool StringOutputStream::Next(void** data, int* size) {
 }
 
 void StringOutputStream::BackUp(int count) {
-  GOOGLE_ABSL_CHECK_GE(count, 0);
-  GOOGLE_ABSL_CHECK(target_ != NULL);
-  GOOGLE_ABSL_CHECK_LE(static_cast<size_t>(count), target_->size());
+  ABSL_CHECK_GE(count, 0);
+  ABSL_CHECK(target_ != nullptr);
+  ABSL_CHECK_LE(static_cast<size_t>(count), target_->size());
   target_->resize(target_->size() - count);
 }
 
 int64_t StringOutputStream::ByteCount() const {
-  GOOGLE_ABSL_CHECK(target_ != NULL);
+  ABSL_CHECK(target_ != nullptr);
   return target_->size();
 }
 
@@ -249,18 +235,18 @@ bool CopyingInputStreamAdaptor::Next(const void** data, int* size) {
 }
 
 void CopyingInputStreamAdaptor::BackUp(int count) {
-  GOOGLE_ABSL_CHECK(backup_bytes_ == 0 && buffer_.get() != NULL)
+  ABSL_CHECK(backup_bytes_ == 0 && buffer_ != nullptr)
       << " BackUp() can only be called after Next().";
-  GOOGLE_ABSL_CHECK_LE(count, buffer_used_)
+  ABSL_CHECK_LE(count, buffer_used_)
       << " Can't back up over more bytes than were returned by the last call"
          " to Next().";
-  GOOGLE_ABSL_CHECK_GE(count, 0) << " Parameter to BackUp() can't be negative.";
+  ABSL_CHECK_GE(count, 0) << " Parameter to BackUp() can't be negative.";
 
   backup_bytes_ = count;
 }
 
 bool CopyingInputStreamAdaptor::Skip(int count) {
-  GOOGLE_ABSL_CHECK_GE(count, 0);
+  ABSL_CHECK_GE(count, 0);
 
   if (failed_) {
     // Already failed on a previous read.
@@ -287,13 +273,13 @@ int64_t CopyingInputStreamAdaptor::ByteCount() const {
 }
 
 void CopyingInputStreamAdaptor::AllocateBufferIfNeeded() {
-  if (buffer_.get() == NULL) {
+  if (buffer_ == nullptr) {
     buffer_.reset(new uint8_t[buffer_size_]);
   }
 }
 
 void CopyingInputStreamAdaptor::FreeBuffer() {
-  GOOGLE_ABSL_CHECK_EQ(backup_bytes_, 0);
+  ABSL_CHECK_EQ(backup_bytes_, 0);
   buffer_used_ = 0;
   buffer_.reset();
 }
@@ -336,10 +322,10 @@ void CopyingOutputStreamAdaptor::BackUp(int count) {
     Flush();
     return;
   }
-  GOOGLE_ABSL_CHECK_GE(count, 0);
-  GOOGLE_ABSL_CHECK_EQ(buffer_used_, buffer_size_)
+  ABSL_CHECK_GE(count, 0);
+  ABSL_CHECK_EQ(buffer_used_, buffer_size_)
       << " BackUp() can only be called after Next().";
-  GOOGLE_ABSL_CHECK_LE(count, buffer_used_)
+  ABSL_CHECK_LE(count, buffer_used_)
       << " Can't back up over more bytes than were returned by the last call"
          " to Next().";
 
@@ -355,7 +341,7 @@ bool CopyingOutputStreamAdaptor::WriteAliasedRaw(const void* data, int size) {
     if (!Flush() || !copying_stream_->Write(data, size)) {
       return false;
     }
-    GOOGLE_ABSL_DCHECK_EQ(buffer_used_, 0);
+    ABSL_DCHECK_EQ(buffer_used_, 0);
     position_ += size;
     return true;
   }
@@ -409,7 +395,7 @@ bool CopyingOutputStreamAdaptor::WriteBuffer() {
 }
 
 void CopyingOutputStreamAdaptor::AllocateBufferIfNeeded() {
-  if (buffer_ == NULL) {
+  if (buffer_ == nullptr) {
     buffer_.reset(new uint8_t[buffer_size_]);
   }
 }
@@ -533,7 +519,7 @@ bool CordInputStream::Next(const void** data, int* size) {
 
 void CordInputStream::BackUp(int count) {
   // Backup is only allowed on last returned chunk from `Next()`.
-  GOOGLE_ABSL_CHECK_LE(static_cast<size_t>(count), size_ - available_);
+  ABSL_CHECK_LE(static_cast<size_t>(count), size_ - available_);
 
   available_ += count;
   bytes_remaining_ += count;
@@ -640,7 +626,7 @@ bool CordOutputStream::Next(void** data, int* size) {
     case State::kFull:
       assert(buffer_.length() > 0);
       cord_.Append(std::move(buffer_));
-      PROTOBUF_FALLTHROUGH_INTENDED;
+      [[fallthrough]];
     case State::kEmpty:
       assert(buffer_.length() == 0);
       buffer_ = absl::CordBuffer::CreateWithDefaultLimit(desired_size);
@@ -706,3 +692,5 @@ absl::Cord CordOutputStream::Consume() {
 }  // namespace io
 }  // namespace protobuf
 }  // namespace google
+
+#include "google/protobuf/port_undef.inc"
